@@ -1,0 +1,55 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # Datos públicos por diseño (la seguridad la pone el RLS de Supabase).
+      # La clave secreta (service_role) NUNCA va aquí.
+      SUPABASE_URL: https://eoyciefpuzqmdwpwndny.supabase.co
+      SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVveWNpZWZwdXpxbWR3cHduZG55Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ1MDgxMzEsImV4cCI6MjExMDA4NDEzMX0.Mf70fg74kvWpWODUKLc8GbYMbzK5TtmUgumF0kPpdL0
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      # Genera la carpeta android/ (no sobrescribe lib/main.dart ni pubspec.yaml)
+      - name: Generate Android platform files
+        run: flutter create --org com.weeklydiet --project-name weekly_diet --platforms android .
+
+      # La app necesita Internet también en la versión release
+      - name: Add INTERNET permission
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.INTERNET' "$MANIFEST" || \
+            sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' "$MANIFEST"
+
+      - run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Build APK
+        run: >
+          flutter build apk --release
+          --dart-define=SUPABASE_URL=$SUPABASE_URL
+          --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: weekly-diet-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
