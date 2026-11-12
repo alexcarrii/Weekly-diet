@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -53,3 +56,14 @@ jobs:
           name: weekly-diet-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
+
+      # Publica el APK como "release" para descargarlo directamente desde el móvil
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Weekly Diet · versión de prueba ${{ github.run_number }}
+          body: Versión de prueba para Android. Descarga el archivo .apk desde el móvil e instálalo.
+          prerelease: false
+          make_latest: true
+          files: build/app/outputs/flutter-apk/app-release.apk
