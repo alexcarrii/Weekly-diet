@@ -613,9 +613,9 @@ class AddPill extends StatelessWidget {
         customBorder: const StadiumBorder(),
         child: CustomPaint(
           painter: _DashedStadiumPainter(),
-          child: const ConstrainedBox(
-            constraints: BoxConstraints(minHeight: 44),
-            child: Padding(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 44),
+            child: const Padding(
               padding: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
