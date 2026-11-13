@@ -1,0 +1,62 @@
+name: Build web (GitHub Pages)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # Datos públicos por diseño (la seguridad la pone el RLS de Supabase).
+      SUPABASE_URL: https://eoyciefpuzqmdwpwndny.supabase.co
+      SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVveWNpZWZwdXpxbWR3cHduZG55Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ1MDgxMzEsImV4cCI6MjExMDA4NDEzMX0.Mf70fg74kvWpWODUKLc8GbYMbzK5TtmUgumF0kPpdL0
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      # Genera la carpeta web/ (no sobrescribe lib/main.dart ni pubspec.yaml)
+      - name: Generate web platform files
+        run: flutter create --org com.weeklydiet --project-name weekly_diet --platforms web .
+
+      - name: App name and iPhone home-screen support
+        run: |
+          sed -i 's#<title>.*</title>#<title>Weekly Diet</title>#' web/index.html
+          sed -i 's#"name": "weekly_diet"#"name": "Weekly Diet"#; s#"short_name": "weekly_diet"#"short_name": "Weekly Diet"#' web/manifest.json
+
+      - run: flutter pub get
+
+      - name: Build web
+        run: >
+          flutter build web --release
+          --base-href /Weekly-diet/
+          --dart-define=SUPABASE_URL=$SUPABASE_URL
+          --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

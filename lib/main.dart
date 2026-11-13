@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -111,6 +112,8 @@ class _AuthScreenState extends State<AuthScreen> {
           email: email,
           password: password,
           data: {'display_name': _name.text.trim()},
+          // En la versión web, el email de confirmación vuelve a la propia app.
+          emailRedirectTo: kIsWeb ? Uri.base.toString() : null,
         );
         if (res.session == null && mounted) {
           setState(() => _error = 'Revisa tu email para confirmar la cuenta.');
