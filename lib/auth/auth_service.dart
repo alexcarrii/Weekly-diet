@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 const kTermsVersion = 'v1.0';
 
 /// Versión del texto de consentimiento de datos de salud (alergias).
+/// La versión que cubre alergias + cribado es kHealthScreeningPolicyVersion (safety_logic.dart).
 const kHealthPolicyVersion = 'v1.0';
 
 const kMinPasswordLength = 8;
@@ -35,7 +36,8 @@ class AuthService {
       email: email.trim(),
       password: password,
       // El servidor copia estos datos al perfil y pone la fecha de aceptación.
-      data: {'terms_version': kTermsVersion, 'marketing_opt_in': marketingOptIn},
+      // Solo se llega aquí con la casilla «Tengo 18 años o más» marcada.
+      data: {'terms_version': kTermsVersion, 'marketing_opt_in': marketingOptIn, 'adult_confirmed': true},
       emailRedirectTo: kIsWeb ? appBaseUrl() : null,
     );
   }
@@ -69,13 +71,15 @@ class AuthService {
     await db.auth.updateUser(UserAttributes(password: password));
   }
 
-  /// Aceptación de términos tras entrar con Google (pantalla A3).
-  Future<void> acceptTerms({required bool marketingOptIn}) async {
+  /// Pantalla A3: aceptación de términos (tras entrar con Google) y mayoría de edad.
+  /// [includeTerms] = false cuando los términos ya estaban aceptados y solo falta la mayoría de edad.
+  Future<void> acceptTerms({required bool marketingOptIn, bool includeTerms = true}) async {
     final uid = db.auth.currentUser!.id;
-    await db
-        .from('profiles')
-        .update({'terms_version': kTermsVersion, 'marketing_opt_in': marketingOptIn})
-        .eq('id', uid);
+    await db.from('profiles').update({
+      'is_adult_confirmed': true,
+      if (includeTerms) 'terms_version': kTermsVersion,
+      if (includeTerms) 'marketing_opt_in': marketingOptIn,
+    }).eq('id', uid);
   }
 
   Future<void> signOut() => db.auth.signOut();

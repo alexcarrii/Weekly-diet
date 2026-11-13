@@ -1,0 +1,68 @@
+{
+  "version": "rules_v0.1",
+  "meals_per_week": { "main": 14 },
+  "base": {
+    "rules": [
+      { "id": "veg_each_main",     "group": "veg",            "scope": "main_meal", "op": "count_meals_with_gte", "value": 12, "target": 14, "severity": "soft" },
+      { "id": "fruit_daily",       "group": "fruit",          "scope": "day",       "op": "between", "min": 2, "max": 3, "severity": "soft" },
+      { "id": "legumes_min",       "group": "legumes",        "scope": "week",      "op": "gte", "value": 4, "severity": "soft" },
+      { "id": "fish_min",          "group": "fish",           "scope": "week",      "op": "gte", "value": 3, "severity": "soft" },
+      { "id": "fish_oily_min",     "group": "fish_oily",      "scope": "week",      "op": "gte", "value": 1, "severity": "soft" },
+      { "id": "eggs_max",          "group": "eggs",           "scope": "week",      "op": "lte", "value": 4, "unit": "units", "severity": "hard" },
+      { "id": "meat_max",          "group": ["meat_white","meat_red","meat_processed"], "scope": "week", "op": "lte", "value": 3, "severity": "hard" },
+      { "id": "meat_red_max",      "group": "meat_red",       "scope": "week",      "op": "lte", "value": 1, "severity": "hard" },
+      { "id": "meat_proc_max",     "group": "meat_processed", "scope": "week",      "op": "lte", "value": 1, "severity": "hard" },
+      { "id": "nuts_min",          "group": "nuts",           "scope": "week",      "op": "gte", "value": 3, "severity": "soft" },
+      { "id": "grains_daily",      "group": "grains",         "scope": "day",       "op": "between", "min": 3, "max": 6, "severity": "soft" },
+      { "id": "grains_whole_ratio","group": "grains_whole",   "scope": "week",      "op": "ratio_gte", "of": "grains", "value": 0.5, "severity": "soft" },
+      { "id": "dairy_max",         "group": "dairy",          "scope": "day",       "op": "lte", "value": 3, "severity": "soft" },
+      { "id": "fried_max",         "flag": "is_fried",        "scope": "week",      "op": "lte", "value": 2, "severity": "soft" },
+      { "id": "ultra_max",         "flag": "is_ultraprocessed","scope": "week",     "op": "lte", "value": 1, "severity": "soft" },
+      { "id": "protein_each_main", "group": ["legumes","fish","eggs","meat_white","meat_red","dairy"], "scope": "main_meal", "op": "count_meals_with_gte", "value": 14, "severity": "soft" },
+      { "id": "repeat_max",        "scope": "week", "op": "same_recipe_lte", "value": 2, "no_consecutive": true, "severity": "soft" }
+    ],
+    "portion_factor": { "default": 1.0 }
+  },
+  "goals": {
+    "eat_healthier":   { "extends": "base" },
+    "maintain_weight": { "extends": "base" },
+    "lose_weight": {
+      "extends": "base",
+      "override": [
+        { "id": "veg_each_main", "value": 12, "target": 14, "severity": "hard", "note": "verdura = medio plato" },
+        { "id": "grains_daily",  "min": 3, "max": 4 },
+        { "id": "fried_max",     "value": 1 },
+        { "id": "ultra_max",     "value": 0 },
+        { "id": "meat_proc_max", "value": 0 }
+      ],
+      "portion_factor": { "grains": 0.75, "tubers": 0.75, "default": 1.0 },
+      "forbid_group_removal": true
+    },
+    "gain_muscle": {
+      "extends": "base",
+      "requires": ["confirmed_regular_physical_activity"],
+      "override": [
+        { "id": "legumes_min",  "value": 5 },
+        { "id": "grains_daily", "min": 5, "max": 6 }
+      ],
+      "add": [
+        { "id": "protein_breakfast", "group": ["dairy","eggs","legumes","nuts"], "scope": "breakfast", "op": "count_meals_with_gte", "value": 7, "severity": "soft" },
+        { "id": "protein_snack",     "group": ["dairy","nuts","legumes"],        "scope": "snack",     "op": "count_meals_with_gte", "value": 7, "severity": "soft" }
+      ],
+      "portion_factor": { "grains": 1.25, "tubers": 1.25, "legumes": 1.25, "fish": 1.25, "dairy": 1.25, "default": 1.0 },
+      "no_supplements": true
+    }
+  },
+  "modifiers": {
+    "save_money": { "base_goal": "eat_healthier", "respect_budget": true, "budget_cannot_break": ["veg_each_main","fruit_daily","legumes_min"], "prefer": ["seasonal","frozen_ok","inventory_first","legumes","eggs"] },
+    "save_time":  { "base_goal": "eat_healthier", "max_total_minutes": 30, "max_total_minutes_share": 0.8, "batch_cooking": { "same_recipe_lte": 3, "pattern": "dinner_to_next_lunch" }, "prefer": ["canned_legumes","frozen_veg"] }
+  },
+  "diets": {
+    "vegetarian":  { "set": { "meat_max": 0, "fish_min": 0, "fish_oily_min": 0, "legumes_min": 7 } },
+    "vegan":       { "set": { "meat_max": 0, "fish_min": 0, "fish_oily_min": 0, "eggs_max": 0, "dairy_max": 0, "legumes_min": 7, "nuts_min": 7 }, "notice": "vegan_b12" },
+    "pescatarian": { "set": { "meat_max": 0, "fish_min": 4 } },
+    "flexitarian": { "set": { "meat_max": 2, "legumes_min": 5 } },
+    "low_carb":    { "set": { "grains_daily": { "min": 2, "max": 3 } }, "keep_minimums": ["fruit_daily","legumes_min","veg_each_main"] },
+    "high_protein":{ "apply_rules_from": "gain_muscle.add" }
+  }
+}

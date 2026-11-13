@@ -29,3 +29,16 @@ jobs:
 
       - name: Tests
         run: flutter test
+
+  # Motor de reglas nutricionales (TypeScript, se ejecutará en las funciones de Supabase)
+  rules-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Tests del motor de reglas
+        run: node --test supabase/functions/_shared/nutrition/engine.test.ts

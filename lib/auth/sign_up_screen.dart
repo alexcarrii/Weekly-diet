@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../safety/safety_widgets.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'auth_service.dart';
@@ -18,6 +19,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   bool _legal = false;
+  bool _adult = false;
   bool _marketing = false;
   bool _loading = false;
   bool _submitted = false;
@@ -53,7 +55,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
       _submitted = true;
       _serverError = null;
     });
-    if (_emailError != null || _passwordError != null || _legalError != null) return;
+    if (_emailError != null || _passwordError != null || _legalError != null || !_adult) return;
 
     setState(() => _loading = true);
     try {
@@ -77,6 +79,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// M1: no se crea la cuenta y se vuelve a la bienvenida.
+  Future<void> _minor() async {
+    await showMinorNotice(context);
+    if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
   }
 
   @override
@@ -122,7 +130,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     const SizedBox(height: 8),
                     ErrorLine(_legalError!),
                   ],
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
+                  AdultConfirmation(
+                    value: _adult,
+                    showError: _submitted,
+                    onChanged: (v) => setState(() => _adult = v),
+                    onMinor: _minor,
+                  ),
+                  const SizedBox(height: 4),
                   CheckRow(
                     value: _marketing,
                     onChanged: (v) => setState(() => _marketing = v),

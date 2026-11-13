@@ -1,5 +1,7 @@
 // Lógica pura del onboarding (sin Flutter ni Supabase) para poder probarla con tests.
 
+import '../safety/safety_logic.dart';
+
 /// Dietas del paso 3. El código coincide con preferences.diets en la base de datos.
 class DietOption {
   const DietOption(this.code, this.title, this.subtitle);
@@ -16,7 +18,7 @@ const kDiets = [
   DietOption('vegan', 'Vegana', 'Nada de origen animal'),
 ];
 
-/// Objetivos del paso 5. El código coincide con preferences.goal.
+/// Objetivos nutricionales (paso 6). El código coincide con preferences.goal.
 class GoalOption {
   const GoalOption(this.code, this.title, this.subtitle);
   final String code;
@@ -31,7 +33,13 @@ const kGoals = [
   GoalOption('gain_muscle', 'Ganar músculo', 'Más proteína en cada comida'),
 ];
 
-/// Los 14 alérgenos de la UE (códigos de la tabla public.allergens), en el orden del diseño.
+/// Modificadores opcionales y combinables (paso 6). El código coincide con preferences.goal_modifiers.
+const kGoalModifiers = [
+  GoalOption('save_money', 'Ahorrar dinero', 'Más legumbre, producto de temporada y lo que ya tienes en casa'),
+  GoalOption('save_time', 'Ahorrar tiempo', 'Recetas de 30 minutos o menos y cocinar una vez para dos días'),
+];
+
+/// Los 14 alérgenos de la UE + la intolerancia a la lactosa (códigos de la tabla public.allergens).
 class AllergenOption {
   const AllergenOption(this.code, this.label, this.short);
   final String code;
@@ -46,9 +54,10 @@ const kAllergens = [
   AllergenOption('fish', 'Pescado', 'pescado'),
   AllergenOption('peanuts', 'Cacahuetes', 'cacahuetes'),
   AllergenOption('soy', 'Soja', 'soja'),
-  // El diseño une leche y lactosa en una sola opción. Se guarda como "milk",
-  // que es lo más estricto (excluye todos los lácteos). Pendiente de validar con el nutricionista.
-  AllergenOption('milk', 'Leche (incluida la lactosa)', 'leche'),
+  // HU-7: alergia a la proteína de la leche (excluye todos los lácteos) separada de la
+  // intolerancia a la lactosa (admite productos "sin lactosa"), como pide SEC-02.
+  AllergenOption('milk', 'Leche (alergia a la proteína)', 'leche'),
+  AllergenOption('lactose', 'Lactosa (intolerancia)', 'lactosa'),
   AllergenOption('tree_nuts', 'Frutos de cáscara', 'frutos de cáscara'),
   AllergenOption('celery', 'Apio', 'apio'),
   AllergenOption('mustard', 'Mostaza', 'mostaza'),
@@ -83,7 +92,7 @@ const kDishes = [
   CatalogItem('Paella', _withMeat, {'crustaceans', 'molluscs', 'fish'}),
   CatalogItem('Gazpacho', _all, {'gluten', 'sulphites'}),
   CatalogItem('Merluza en salsa verde', _withFish, {'fish', 'molluscs', 'gluten'}),
-  CatalogItem('Crema de calabaza', _vegetarianOk, {'milk'}),
+  CatalogItem('Crema de calabaza', _vegetarianOk, {'milk', 'lactose'}),
   CatalogItem('Ensalada de garbanzos', _all),
   CatalogItem('Fajitas de pollo', _withMeat, {'gluten'}),
   CatalogItem('Tortilla de patatas', _vegetarianOk, {'eggs'}),
@@ -163,11 +172,35 @@ class OnboardingData {
   Set<String> allergens = {};
   bool healthConsent = false;
   String? goal;
+  Set<String> goalModifiers = {};
+  bool confirmedActivity = false; // requisito de "Ganar músculo"
   Set<String> dishes = {};
   Set<String> favorites = {};
   Set<String> avoid = {};
   List<String> customFavorites = [];
   List<String> customAvoid = [];
+
+  // Cribado de seguridad. Las respuestas solo viven en memoria: nunca se guardan.
+  Map<String, bool?> screeningAnswers = emptyScreeningAnswers();
+
+  /// Casilla de permiso del cribado (consentimiento v1.1: alergias + cribado).
+  bool screeningConsent = false;
+
+  /// Versión del consentimiento guardado en el servidor (v1.0 = solo alergias).
+  String? consentVersion;
+
+  /// Resultado guardado (sin fila en health_screening = modo general).
+  SafetyMode safetyMode = SafetyMode.general;
+  String? safetyReferral;
+
+  /// El permiso guardado ya cubre el cribado: no hace falta volver a pedirlo.
+  bool get hasScreeningConsentOnServer => healthConsent && consentVersion == kHealthScreeningPolicyVersion;
+
+  /// Respondió «No» a todo pero no dio permiso (para explicar por qué hay objetivos bloqueados).
+  bool get lockedOnlyByConsent => !screeningConsent && !screeningAnswers.values.any((v) => v == true);
+
+  String? lockedReasonFor(String goalCode) =>
+      goalLockedReason(goalCode, mode: safetyMode, onlyMissingConsent: lockedOnlyByConsent);
 
   /// Rellena con lo que ya había guardado (si el usuario vuelve a entrar a mitad).
   void loadFromPreferences(Map<String, dynamic> p) {
@@ -183,6 +216,8 @@ class OnboardingData {
     final diets = (p['diets'] as List?)?.cast<String>() ?? const [];
     diet = diets.isEmpty ? null : diets.first;
     goal = p['goal'] as String?;
+    goalModifiers = {...?(p['goal_modifiers'] as List?)?.cast<String>()};
+    confirmedActivity = p['confirmed_physical_activity'] == true;
     dishes = {...?(p['favorite_dishes'] as List?)?.cast<String>()};
     final fav = (p['preferred_ingredients'] as List?)?.cast<String>() ?? const [];
     final av = (p['disliked_ingredients'] as List?)?.cast<String>() ?? const [];

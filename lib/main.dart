@@ -10,6 +10,7 @@ import 'auth/welcome_screen.dart';
 import 'home/home_screen.dart';
 import 'onboarding/onboarding_flow.dart';
 import 'platform/url_cleaner.dart';
+import 'safety/safety_logic.dart';
 import 'ui/theme.dart';
 import 'ui/widgets.dart';
 
@@ -65,8 +66,8 @@ class _MissingConfigScreen extends StatelessWidget {
 
 /// Decide qué pantalla ver:
 ///   sin sesión → Bienvenida (A1) · enlace de recuperar → Nueva contraseña (A7)
-///   sin términos aceptados → Aceptar términos (A3) · onboarding sin terminar → Onboarding
-///   todo listo → Inicio
+///   sin términos o sin mayoría de edad → Aceptar términos (A3) · onboarding sin terminar → Onboarding
+///   cribado sin responder (o de una versión anterior) → Cribado + objetivo · todo listo → Inicio
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
 
@@ -124,7 +125,7 @@ class _AuthGateState extends State<AuthGate> {
     try {
       final profile = await db
           .from('profiles')
-          .select('display_name, terms_version, onboarding_completed')
+          .select('display_name, terms_version, onboarding_completed, is_adult_confirmed, safety_screening_version')
           .eq('id', uid)
           .maybeSingle();
       if (!mounted || db.auth.currentUser?.id != uid) return;
@@ -184,11 +185,19 @@ class _AuthGateState extends State<AuthGate> {
       );
     }
 
-    if (profile['terms_version'] == null) {
-      return AcceptTermsScreen(firstName: _firstName, onAccepted: _loadProfile);
+    final termsAccepted = profile['terms_version'] != null;
+    if (!termsAccepted || profile['is_adult_confirmed'] != true) {
+      return AcceptTermsScreen(
+        firstName: _firstName,
+        termsAlreadyAccepted: termsAccepted,
+        onAccepted: _loadProfile,
+      );
     }
     if (profile['onboarding_completed'] != true) {
       return OnboardingFlow(onFinished: _loadProfile);
+    }
+    if (profile['safety_screening_version'] != kScreeningVersion) {
+      return OnboardingFlow(key: const ValueKey('screening'), screeningOnly: true, onFinished: _loadProfile);
     }
     return HomeScreen(firstName: _firstName);
   }

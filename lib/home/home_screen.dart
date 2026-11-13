@@ -4,6 +4,9 @@ import '../auth/auth_service.dart';
 import '../onboarding/onboarding_flow.dart';
 import '../onboarding/onboarding_logic.dart';
 import '../onboarding/onboarding_repository.dart';
+import '../safety/messages.dart';
+import '../safety/safety_logic.dart';
+import '../safety/safety_widgets.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 
@@ -74,6 +77,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 24),
                 if (_error != null) ErrorLine(_error!),
                 if (d == null && _error == null) const Center(child: CircularProgressIndicator()),
+                if (d != null && d.safetyMode == SafetyMode.general) ...[
+                  const GeneralModeCard(),
+                  const SizedBox(height: 16),
+                ],
+                if (d != null && d.diet == 'vegan') ...[
+                  const InfoBox(text: SafetyMessages.veganB12),
+                  const SizedBox(height: 16),
+                ],
                 if (d != null) _Summary(data: d),
               ],
             ),
@@ -94,12 +105,14 @@ class _Summary extends StatelessWidget {
   Widget build(BuildContext context) {
     final diet = kDiets.where((x) => x.code == data.diet).map((x) => x.title).firstOrNull;
     final goal = kGoals.where((x) => x.code == data.goal).map((x) => x.title).firstOrNull;
+    final modifiers = [for (final m in kGoalModifiers) if (data.goalModifiers.contains(m.code)) m.title];
     final rows = <(String, String)>[
       ('Personas', peopleLabel(data.householdSize)),
       ('Presupuesto', data.budget == null ? 'Sin límite fijo' : '${data.budget} € / semana'),
       ('Dieta', diet ?? 'Sin indicar'),
       ('Alergias', data.allergens.isEmpty ? 'Ninguna guardada' : allergySentence(data.allergens)),
       ('Objetivo', goal ?? 'Sin indicar'),
+      ('Además', modifiers.isEmpty ? 'Nada más' : modifiers.join(' · ')),
       ('Gustos', data.tasteSummary),
     ];
     return Container(
