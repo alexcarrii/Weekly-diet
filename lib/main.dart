@@ -1,11 +1,24 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'auth/accept_terms_screen.dart';
+import 'auth/auth_service.dart';
+import 'auth/new_password_screen.dart';
+import 'auth/welcome_screen.dart';
+import 'home/home_screen.dart';
+import 'onboarding/onboarding_flow.dart';
+import 'platform/url_cleaner.dart';
+import 'ui/theme.dart';
+import 'ui/widgets.dart';
 
 // La URL y la clave pública (anon) llegan al compilar con --dart-define.
 // La clave anon es pública por diseño: la seguridad la pone el RLS de la base de datos.
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
 const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
+
+final navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -15,8 +28,6 @@ Future<void> main() async {
   runApp(const WeeklyDietApp());
 }
 
-SupabaseClient get db => Supabase.instance.client;
-
 class WeeklyDietApp extends StatelessWidget {
   const WeeklyDietApp({super.key});
 
@@ -25,13 +36,9 @@ class WeeklyDietApp extends StatelessWidget {
     return MaterialApp(
       title: 'Weekly Diet',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorSchemeSeed: const Color(0xFF2E7D32),
-        useMaterial3: true,
-      ),
-      home: supabaseUrl.isEmpty || supabaseAnonKey.isEmpty
-          ? const _MissingConfigScreen()
-          : const AuthGate(),
+      navigatorKey: navigatorKey,
+      theme: buildAppTheme(),
+      home: supabaseUrl.isEmpty || supabaseAnonKey.isEmpty ? const _MissingConfigScreen() : const AuthGate(),
     );
   }
 }
@@ -56,268 +63,133 @@ class _MissingConfigScreen extends StatelessWidget {
   }
 }
 
-/// Muestra el acceso o la app según haya sesión.
-class AuthGate extends StatelessWidget {
+/// Decide qué pantalla ver:
+///   sin sesión → Bienvenida (A1) · enlace de recuperar → Nueva contraseña (A7)
+///   sin términos aceptados → Aceptar términos (A3) · onboarding sin terminar → Onboarding
+///   todo listo → Inicio
+class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<AuthState>(
-      stream: db.auth.onAuthStateChange,
-      builder: (context, _) {
-        final session = db.auth.currentSession;
-        return session == null ? const AuthScreen() : const ConnectionCheckScreen();
-      },
-    );
-  }
+  State<AuthGate> createState() => _AuthGateState();
 }
 
-class AuthScreen extends StatefulWidget {
-  const AuthScreen({super.key});
-
-  @override
-  State<AuthScreen> createState() => _AuthScreenState();
-}
-
-class _AuthScreenState extends State<AuthScreen> {
-  final _name = TextEditingController();
-  final _email = TextEditingController();
-  final _password = TextEditingController();
-  bool _isSignUp = true;
-  bool _acceptedTerms = false;
-  bool _loading = false;
-  String? _error;
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _email.dispose();
-    _password.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final email = _email.text.trim();
-      final password = _password.text;
-      if (_isSignUp) {
-        if (!_acceptedTerms) {
-          throw AuthException('Debes aceptar la política de privacidad y los términos.');
-        }
-        final res = await db.auth.signUp(
-          email: email,
-          password: password,
-          data: {'display_name': _name.text.trim()},
-          // En la versión web, el email de confirmación vuelve a la propia app.
-          emailRedirectTo: kIsWeb ? Uri.base.toString() : null,
-        );
-        if (res.session == null && mounted) {
-          setState(() => _error = 'Revisa tu email para confirmar la cuenta.');
-        }
-      } else {
-        await db.auth.signInWithPassword(email: email, password: password);
-      }
-    } on AuthException catch (e) {
-      setState(() => _error = e.message);
-    } catch (e) {
-      setState(() => _error = 'Error inesperado: $e');
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _resetPassword() async {
-    final email = _email.text.trim();
-    if (email.isEmpty) {
-      setState(() => _error = 'Escribe tu email para recuperar la contraseña.');
-      return;
-    }
-    try {
-      await db.auth.resetPasswordForEmail(email);
-      setState(() => _error = 'Te hemos enviado un email para cambiar la contraseña.');
-    } on AuthException catch (e) {
-      setState(() => _error = e.message);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(_isSignUp ? 'Crear cuenta' : 'Iniciar sesión')),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(24),
-          children: [
-            if (_isSignUp)
-              TextField(
-                controller: _name,
-                decoration: const InputDecoration(labelText: 'Nombre'),
-                textInputAction: TextInputAction.next,
-              ),
-            TextField(
-              controller: _email,
-              decoration: const InputDecoration(labelText: 'Email'),
-              keyboardType: TextInputType.emailAddress,
-              textInputAction: TextInputAction.next,
-            ),
-            TextField(
-              controller: _password,
-              decoration: const InputDecoration(labelText: 'Contraseña'),
-              obscureText: true,
-            ),
-            if (_isSignUp)
-              CheckboxListTile(
-                value: _acceptedTerms,
-                onChanged: (v) => setState(() => _acceptedTerms = v ?? false),
-                title: const Text('Acepto la política de privacidad y los términos de uso'),
-                controlAffinity: ListTileControlAffinity.leading,
-                contentPadding: EdgeInsets.zero,
-              ),
-            const SizedBox(height: 16),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-              ),
-            FilledButton(
-              onPressed: _loading ? null : _submit,
-              child: _loading
-                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                  : Text(_isSignUp ? 'Crear cuenta' : 'Entrar'),
-            ),
-            TextButton(
-              onPressed: () => setState(() {
-                _isSignUp = !_isSignUp;
-                _error = null;
-              }),
-              child: Text(_isSignUp ? '¿Ya tienes cuenta? Inicia sesión' : '¿No tienes cuenta? Créala'),
-            ),
-            if (!_isSignUp)
-              TextButton(onPressed: _resetPassword, child: const Text('He olvidado mi contraseña')),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Check {
-  _Check(this.label, this.ok, [this.detail = '']);
-  final String label;
-  final bool ok;
-  final String detail;
-}
-
-/// Pantalla temporal del Sprint 1: verifica que la app habla con la base de datos.
-class ConnectionCheckScreen extends StatefulWidget {
-  const ConnectionCheckScreen({super.key});
-
-  @override
-  State<ConnectionCheckScreen> createState() => _ConnectionCheckScreenState();
-}
-
-class _ConnectionCheckScreenState extends State<ConnectionCheckScreen> {
-  List<_Check> _checks = [];
-  int? _householdSize;
-  bool _loading = true;
+class _AuthGateState extends State<AuthGate> {
+  late final StreamSubscription<AuthState> _sub;
+  bool _recovery = openedFromPasswordReset();
+  bool _urlCleaned = false;
+  String? _userId;
+  Map<String, dynamic>? _profile;
+  String? _profileError;
 
   @override
   void initState() {
     super.initState();
-    _runChecks();
+    _userId = db.auth.currentUser?.id;
+    if (_userId != null) _loadProfile();
+    _sub = db.auth.onAuthStateChange.listen(_onAuthChange);
   }
 
-  Future<void> _runChecks() async {
-    setState(() => _loading = true);
-    final checks = <_Check>[];
-    final user = db.auth.currentUser;
-    checks.add(_Check('Conectado a Supabase', true));
-    checks.add(_Check('Sesión iniciada', user != null, user?.email ?? ''));
-    try {
-      final profiles = await db.from('profiles').select('id, display_name');
-      final own = profiles.where((p) => p['id'] == user?.id).toList();
-      checks.add(_Check('Perfil creado', own.length == 1,
-          own.isNotEmpty ? (own.first['display_name'] ?? '').toString() : ''));
-      checks.add(_Check('Solo veo mi perfil', profiles.length == 1, '${profiles.length} visible(s)'));
-    } catch (e) {
-      checks.add(_Check('Perfil creado', false, '$e'));
+  @override
+  void dispose() {
+    _sub.cancel();
+    super.dispose();
+  }
+
+  void _onAuthChange(AuthState state) {
+    final newUserId = state.session?.user.id;
+    final userChanged = newUserId != _userId;
+    if (state.event == AuthChangeEvent.passwordRecovery) _recovery = true;
+    if (state.event == AuthChangeEvent.signedOut) _recovery = false;
+
+    if (userChanged || state.event == AuthChangeEvent.passwordRecovery) {
+      // Al entrar o salir se cierran las pantallas abiertas encima (login, registro…).
+      navigatorKey.currentState?.popUntil((r) => r.isFirst);
     }
+    if (!mounted) return;
+    setState(() {
+      _userId = newUserId;
+      if (userChanged) {
+        _profile = null;
+        _profileError = null;
+      }
+    });
+    if (userChanged && newUserId != null) _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    final uid = db.auth.currentUser?.id;
+    if (uid == null) return;
+    setState(() => _profileError = null);
     try {
-      final pref = await db.from('preferences').select('household_size').single();
-      _householdSize = pref['household_size'] as int?;
-      checks.add(_Check('Preferencias leídas', true, 'Personas en casa: $_householdSize'));
-    } catch (e) {
-      checks.add(_Check('Preferencias leídas', false, '$e'));
-    }
-    if (mounted) {
+      final profile = await db
+          .from('profiles')
+          .select('display_name, terms_version, onboarding_completed')
+          .eq('id', uid)
+          .maybeSingle();
+      if (!mounted || db.auth.currentUser?.id != uid) return;
       setState(() {
-        _checks = checks;
-        _loading = false;
+        _profile = profile;
+        _profileError = profile == null ? 'No encontramos tu perfil.' : null;
       });
+    } catch (e) {
+      if (mounted) setState(() => _profileError = friendlyAuthError(e));
     }
   }
 
-  Future<void> _setHousehold(int value) async {
-    final uid = db.auth.currentUser!.id;
-    await db.from('preferences').update({'household_size': value}).eq('user_id', uid);
-    await _runChecks();
+  String? get _firstName {
+    final name = (_profile?['display_name'] as String?)?.trim();
+    if (name == null || name.isEmpty) return null;
+    return name.split(RegExp(r'\s+')).first;
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Prueba de conexión'),
-        actions: [
-          IconButton(
-            tooltip: 'Cerrar sesión',
-            icon: const Icon(Icons.logout),
-            onPressed: () => db.auth.signOut(),
-          ),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _runChecks,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  for (final c in _checks)
-                    ListTile(
-                      leading: Icon(
-                        c.ok ? Icons.check_circle : Icons.cancel,
-                        color: c.ok ? Colors.green : Colors.red,
-                      ),
-                      title: Text(c.label),
-                      subtitle: c.detail.isEmpty ? null : Text(c.detail),
+    if (_userId == null) return const WelcomeScreen();
+
+    if (_recovery) {
+      if (!_urlCleaned) {
+        _urlCleaned = true;
+        replaceBrowserUrl(appBaseUrl());
+      }
+      return NewPasswordScreen(
+        onDone: () {
+          setState(() => _recovery = false);
+          _loadProfile();
+        },
+      );
+    }
+
+    final profile = _profile;
+    if (profile == null) {
+      return AppPage(
+        child: Center(
+          child: _profileError == null
+              ? const CircularProgressIndicator()
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ErrorLine(_profileError!),
+                    const SizedBox(height: 16),
+                    AppButton(label: 'Reintentar', onPressed: _loadProfile),
+                    const SizedBox(height: 8),
+                    AppButton(
+                      label: 'Cerrar sesión',
+                      style: AppButtonStyle.ghost,
+                      onPressed: () => const AuthService().signOut(),
                     ),
-                  const Divider(height: 32),
-                  Text('Personas en casa', style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      IconButton.filledTonal(
-                        onPressed: (_householdSize ?? 1) > 1 ? () => _setHousehold(_householdSize! - 1) : null,
-                        icon: const Icon(Icons.remove),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Text('${_householdSize ?? '-'}', style: Theme.of(context).textTheme.headlineSmall),
-                      ),
-                      IconButton.filledTonal(
-                        onPressed: (_householdSize ?? 1) < 12 ? () => _setHousehold((_householdSize ?? 1) + 1) : null,
-                        icon: const Icon(Icons.add),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-    );
+                  ],
+                ),
+        ),
+      );
+    }
+
+    if (profile['terms_version'] == null) {
+      return AcceptTermsScreen(firstName: _firstName, onAccepted: _loadProfile);
+    }
+    if (profile['onboarding_completed'] != true) {
+      return OnboardingFlow(onFinished: _loadProfile);
+    }
+    return HomeScreen(firstName: _firstName);
   }
 }

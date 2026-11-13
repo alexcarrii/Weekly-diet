@@ -10,6 +10,8 @@ dependencies:
   flutter:
     sdk: flutter
   supabase_flutter: ^2.8.0
+  # Solo se usa en la versión web (limpiar la dirección tras recuperar contraseña)
+  web: ^1.1.0
 
 dev_dependencies:
   flutter_test:
@@ -17,3 +19,19 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # Tipografías del diseño (Inter y Plus Jakarta Sans). Para activarlas, copia los .ttf
+  # en assets/fonts/ y quita los # de las líneas siguientes. Sin ellas se usa la fuente del sistema.
+  # fonts:
+  #   - family: Inter
+  #     fonts:
+  #       - asset: assets/fonts/Inter-Regular.ttf
+  #       - asset: assets/fonts/Inter-Medium.ttf
+  #         weight: 500
+  #       - asset: assets/fonts/Inter-SemiBold.ttf
+  #         weight: 600
+  #   - family: PlusJakartaSans
+  #     fonts:
+  #       - asset: assets/fonts/PlusJakartaSans-SemiBold.ttf
+  #         weight: 600
+  #       - asset: assets/fonts/PlusJakartaSans-Bold.ttf
+  #         weight: 700
